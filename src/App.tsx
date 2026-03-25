@@ -22,80 +22,63 @@ import { Toaster, toast } from 'sonner';
 import { cn } from './lib/utils';
 import { Lead, LeadStatus, DashboardStats } from './types';
 
-// Mock Data
-const MOCK_LEADS: Lead[] = [
-  {
-    id: '1',
-    companyName: 'TechFlow Solutions',
-    website: 'https://techflow.io',
-    location: 'San Francisco, CA',
-    email: 'hello@techflow.io',
-    isVerified: true,
-    isIdeal: true,
-    status: 'completed',
-    summary: 'B2B SaaS platform specializing in workflow automation for creative agencies.',
-    icebreaker: 'I noticed TechFlow recently launched their new automation API—really impressive stuff!',
-    subjectLine: 'Quick question about TechFlow\'s workflow automation',
-    emailBody: 'Hi team, I saw your new API launch. We help agencies like yours scale...',
-    enrichedAt: '2024-03-24 14:30'
-  },
-  {
-    id: '2',
-    companyName: 'GreenGrid Energy',
-    website: 'https://greengrid.com',
-    location: 'Austin, TX',
-    email: 'contact@greengrid.com',
-    isVerified: true,
-    isIdeal: false,
-    status: 'completed',
-    summary: 'Renewable energy infrastructure provider focusing on solar grid management.',
-    icebreaker: 'Your recent project in West Texas is a great example of sustainable scaling.',
-    enrichedAt: '2024-03-24 15:15'
-  },
-  {
-    id: '3',
-    companyName: 'Stellar Design',
-    website: 'https://stellar.design',
-    status: 'scraping',
-  },
-  {
-    id: '4',
-    companyName: 'Nova Health',
-    website: 'https://novahealth.app',
-    location: 'New York, NY',
-    status: 'verifying',
-    email: 'info@novahealth.app'
-  }
-];
+// Mock Data removed for real Airtable integration
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'leads' | 'settings'>('dashboard');
-  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchLeads();
+    const interval = setInterval(fetchLeads, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchLeads = async () => {
+    try {
+      const response = await fetch('/api/leads');
+      const data = await response.json();
+      if (data.leads) {
+        // Map Airtable fields to our Lead type
+        const mappedLeads = data.leads.map((l: any) => ({
+          id: l.id,
+          companyName: l.Name || 'Unknown',
+          website: l.Source || 'Webhook',
+          location: l.Phone || '',
+          email: l.Email || '',
+          status: (l.Status?.toLowerCase() || 'pending') as LeadStatus,
+          isVerified: l.Status === 'AI_Generated',
+          isIdeal: l.Status === 'AI_Generated',
+          summary: l.Message || '',
+          emailBody: l.AI_Personalized_Message || '',
+        }));
+        setLeads(mappedLeads);
+      }
+    } catch (error) {
+      console.error('Failed to fetch leads:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const stats: DashboardStats = {
     totalLeads: leads.length,
-    enrichedLeads: leads.filter(l => l.status === 'completed').length,
+    enrichedLeads: leads.filter(l => l.status === 'completed' || l.status === 'completed').length,
     verifiedEmails: leads.filter(l => l.isVerified).length,
     idealLeads: leads.filter(l => l.isIdeal).length,
   };
 
   const handleRunWorkflow = () => {
     setIsProcessing(true);
-    toast.info('Starting outbound engine workflow...');
+    toast.info('Starting AutoFlow sync...');
     
-    // Simulate processing
     setTimeout(() => {
-      setLeads(prev => prev.map(l => 
-        l.status === 'scraping' ? { ...l, status: 'enriching' } : l
-      ));
-      toast.success('Website scraping completed for pending leads.');
-    }, 2000);
-
-    setTimeout(() => {
+      fetchLeads();
       setIsProcessing(false);
-      toast.success('Workflow batch completed.');
-    }, 5000);
+      toast.success('Sync completed.');
+    }, 2000);
   };
 
   return (
@@ -106,10 +89,10 @@ export default function App() {
       <aside className="fixed left-0 top-0 h-full w-64 bg-white border-r border-[#E5E5E5] z-50">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <Play className="w-4 h-4 text-white fill-current" />
             </div>
-            <span className="font-bold text-xl tracking-tight">T&F ENGINE</span>
+            <span className="font-bold text-xl tracking-tight">T&F AUTOFLOW</span>
           </div>
 
           <nav className="space-y-1">
@@ -198,7 +181,15 @@ export default function App() {
                       </button>
                     </div>
                     <div className="space-y-4">
-                      {leads.slice(0, 3).map(lead => (
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="w-8 h-8 animate-spin text-[#9E9E9E]" />
+                        </div>
+                      ) : leads.length === 0 ? (
+                        <div className="text-center py-12 text-[#9E9E9E] text-sm italic">
+                          No leads found. Send a POST request to /webhook/leads to get started.
+                        </div>
+                      ) : leads.slice(0, 5).map(lead => (
                         <div key={lead.id} className="flex items-center justify-between p-4 rounded-xl border border-[#F5F5F5] hover:border-[#E5E5E5] transition-all group cursor-pointer">
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 bg-[#F5F5F5] rounded-lg flex items-center justify-center font-bold text-xs">
